@@ -61,7 +61,7 @@ class FixSrtTimingTests(unittest.TestCase):
             updated = srt.read_text(encoding="utf-8")
             self.assertIn("00:00:04,000 --> 00:00:05,000", updated)
 
-    def test_process_from_env_rejects_invalid_numeric_settings(self) -> None:
+    def test_process_from_env_rejects_invalid_alignment_threshold(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "clip.mp4").write_bytes(b"")
