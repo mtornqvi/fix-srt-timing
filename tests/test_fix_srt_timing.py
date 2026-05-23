@@ -61,6 +61,19 @@ class FixSrtTimingTests(unittest.TestCase):
             updated = srt.read_text(encoding="utf-8")
             self.assertIn("00:00:04,000 --> 00:00:05,000", updated)
 
+    def test_process_from_env_rejects_invalid_numeric_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "clip.mp4").write_bytes(b"")
+            (root / "clip.srt").write_text("1\n00:00:00,000 --> 00:00:01,000\nHi\n", encoding="utf-8")
+            env = root / ".env"
+            env.write_text("PROCESS_FILE=clip\nALIGNMENT_SIMILARITY_THRESHOLD=abc\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                ValueError, "ALIGNMENT_SIMILARITY_THRESHOLD must be a valid float value."
+            ):
+                process_from_env(env)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -223,10 +223,18 @@ def process_from_env(env_path: Path = Path(".env")) -> Path:
     settings = load_dotenv(env_path)
     video_path, subtitle_path = resolve_paths(settings, repository_root=repository_root)
     model_size = settings.get("WHISPER_MODEL", "base")
-    similarity_threshold = float(settings.get("ALIGNMENT_SIMILARITY_THRESHOLD", SIMILARITY_THRESHOLD))
-    min_duration_seconds = float(
-        settings.get("MIN_SUBTITLE_DURATION_SECONDS", MIN_SUBTITLE_DURATION_SECONDS)
-    )
+    try:
+        similarity_threshold = float(
+            settings.get("ALIGNMENT_SIMILARITY_THRESHOLD", SIMILARITY_THRESHOLD)
+        )
+    except ValueError as exc:
+        raise ValueError("ALIGNMENT_SIMILARITY_THRESHOLD must be a valid float value.") from exc
+    try:
+        min_duration_seconds = float(
+            settings.get("MIN_SUBTITLE_DURATION_SECONDS", MIN_SUBTITLE_DURATION_SECONDS)
+        )
+    except ValueError as exc:
+        raise ValueError("MIN_SUBTITLE_DURATION_SECONDS must be a valid float value.") from exc
     transcript_segments = transcribe_video(video_path, model_size=model_size)
     entries = parse_srt(subtitle_path.read_text(encoding="utf-8"))
     adjusted = align_subtitles_to_transcript(
