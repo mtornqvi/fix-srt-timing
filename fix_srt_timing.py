@@ -56,6 +56,8 @@ def format_timestamp(seconds: float) -> str:
 TIMING_PATTERN = re.compile(
     r"(?P<start>\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(?P<end>\d{2}:\d{2}:\d{2},\d{3})"
 )
+SIMILARITY_THRESHOLD = 0.15
+MIN_SUBTITLE_DURATION_SECONDS = 0.001
 
 
 def parse_srt(text: str) -> list[SubtitleEntry]:
@@ -126,7 +128,7 @@ def align_subtitles_to_transcript(
                 best_score = score
                 best = segment
 
-        if best and best_score > 0.15:
+        if best and best_score > SIMILARITY_THRESHOLD:
             start = float(best.get("start", entry.start))
             end = float(best.get("end", entry.end))
         else:
@@ -134,7 +136,7 @@ def align_subtitles_to_transcript(
             end = entry.end
 
         start = max(start, previous_end)
-        end = max(end, start + 0.001)
+        end = max(end, start + MIN_SUBTITLE_DURATION_SECONDS)
         previous_end = end
         aligned.append(SubtitleEntry(index=entry.index, start=start, end=end, text=entry.text))
     return aligned

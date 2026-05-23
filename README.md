@@ -23,7 +23,7 @@ PROCESS_FILE=my_video
 ## Run
 
 ```bash
-python /home/runner/work/fix-srt-timing/fix-srt-timing/fix_srt_timing.py
+python fix_srt_timing.py
 ```
 
 The script updates the configured `.srt` file in place.
