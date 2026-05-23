@@ -1,16 +1,14 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
-from fix_srt_timing import (
-    SubtitleEntry,
-    align_subtitles_to_transcript,
-    load_dotenv,
-    parse_srt,
-    process_from_env,
-    resolve_paths,
-)
+from models import SubtitleEntry
+from alignment import align_subtitles_to_transcript
+from config import load_dotenv, resolve_paths
+from srt_parser import parse_srt
+from fix_srt_timing import process_from_env
+from logging_utils import close_logging
 
 
 class FixSrtTimingTests(unittest.TestCase):
@@ -45,21 +43,29 @@ class FixSrtTimingTests(unittest.TestCase):
         self.assertEqual((aligned[0].start, aligned[0].end), (2.0, 3.0))
         self.assertEqual((aligned[1].start, aligned[1].end), (5.0, 6.0))
 
-    @patch("fix_srt_timing.transcribe_video")
-    def test_process_from_env_updates_srt_file(self, mock_transcribe) -> None:
-        mock_transcribe.return_value = [{"start": 4.0, "end": 5.0, "text": "Shift me"}]
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "clip.mp4").write_bytes(b"")
-            srt = root / "clip.srt"
-            srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nShift me\n", encoding="utf-8")
-            env = root / ".env"
-            env.write_text("PROCESS_FILE=clip\n", encoding="utf-8")
+    def test_process_from_env_updates_srt_file(self) -> None:
+        # Mock the whisper module at import time
+        mock_whisper = MagicMock()
+        mock_whisper.load_model.return_value.transcribe.return_value = {
+            "segments": [{"start": 4.0, "end": 5.0, "text": "Shift me"}]
+        }
+        
+        with patch.dict('sys.modules', {'whisper': mock_whisper}):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                (root / "clip.mp4").write_bytes(b"")
+                srt = root / "clip.srt"
+                srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nShift me\n", encoding="utf-8")
+                env = root / ".env"
+                env.write_text("PROCESS_FILE=clip\n", encoding="utf-8")
 
-            process_from_env(env)
+                try:
+                    process_from_env(env)
+                finally:
+                    close_logging()
 
-            updated = srt.read_text(encoding="utf-8")
-            self.assertIn("00:00:04,000 --> 00:00:05,000", updated)
+                updated = srt.read_text(encoding="utf-8")
+                self.assertIn("00:00:04,000 --> 00:00:05,000", updated)
 
     def test_process_from_env_rejects_invalid_alignment_threshold(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -69,10 +75,13 @@ class FixSrtTimingTests(unittest.TestCase):
             env = root / ".env"
             env.write_text("PROCESS_FILE=clip\nALIGNMENT_SIMILARITY_THRESHOLD=abc\n", encoding="utf-8")
 
-            with self.assertRaisesRegex(
-                ValueError, "ALIGNMENT_SIMILARITY_THRESHOLD must be a valid float value."
-            ):
-                process_from_env(env)
+            try:
+                with self.assertRaisesRegex(
+                    ValueError, "ALIGNMENT_SIMILARITY_THRESHOLD must be a valid float value."
+                ):
+                    process_from_env(env)
+            finally:
+                close_logging()
 
 
 if __name__ == "__main__":
