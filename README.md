@@ -14,6 +14,8 @@ PROCESS_FILE=my_video
 # SUBTITLE_FILE=my_video.srt
 # optional:
 # WHISPER_MODEL=base
+# ALIGNMENT_SIMILARITY_THRESHOLD=0.6
+# MIN_SUBTITLE_DURATION_SECONDS=0.5
 ```
 
 - `PROCESS_FOLDER` decides which folder to process.

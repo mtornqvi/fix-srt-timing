@@ -14,7 +14,7 @@ from fix_srt_timing import (
 
 
 class FixSrtTimingTests(unittest.TestCase):
-    def test_load_dotenv_and_resolve_paths_with_process_file(self) -> None:
+    def test_process_file_resolves_correct_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             media = root / "media"
@@ -30,7 +30,7 @@ class FixSrtTimingTests(unittest.TestCase):
             self.assertEqual(video, media / "demo.mp4")
             self.assertEqual(subtitle, media / "demo.srt")
 
-    def test_align_subtitles_to_transcript_uses_matching_text(self) -> None:
+    def test_align_subtitles_adjusts_timings_to_match_transcript(self) -> None:
         entries = parse_srt(
             "1\n00:00:00,000 --> 00:00:01,000\nHello there\n\n"
             "2\n00:00:01,100 --> 00:00:02,100\nGeneral Kenobi\n"

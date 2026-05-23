@@ -56,8 +56,8 @@ def format_timestamp(seconds: float) -> str:
 TIMING_PATTERN = re.compile(
     r"(?P<start>\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(?P<end>\d{2}:\d{2}:\d{2},\d{3})"
 )
-SIMILARITY_THRESHOLD = 0.15
-MIN_SUBTITLE_DURATION_SECONDS = 0.001
+SIMILARITY_THRESHOLD = 0.6
+MIN_SUBTITLE_DURATION_SECONDS = 0.5
 
 
 def parse_srt(text: str) -> list[SubtitleEntry]:
@@ -112,7 +112,10 @@ def _similarity(a: str, b: str) -> float:
 
 
 def align_subtitles_to_transcript(
-    entries: list[SubtitleEntry], transcript_segments: list[dict[str, object]]
+    entries: list[SubtitleEntry],
+    transcript_segments: list[dict[str, object]],
+    similarity_threshold: float = SIMILARITY_THRESHOLD,
+    min_duration_seconds: float = MIN_SUBTITLE_DURATION_SECONDS,
 ) -> list[SubtitleEntry]:
     aligned: list[SubtitleEntry] = []
     previous_end = 0.0
@@ -128,7 +131,7 @@ def align_subtitles_to_transcript(
                 best_score = score
                 best = segment
 
-        if best and best_score > SIMILARITY_THRESHOLD:
+        if best and best_score > similarity_threshold:
             start = float(best.get("start", entry.start))
             end = float(best.get("end", entry.end))
         else:
@@ -136,21 +139,26 @@ def align_subtitles_to_transcript(
             end = entry.end
 
         start = max(start, previous_end)
-        end = max(end, start + MIN_SUBTITLE_DURATION_SECONDS)
+        end = max(end, start + min_duration_seconds)
         previous_end = end
         aligned.append(SubtitleEntry(index=entry.index, start=start, end=end, text=entry.text))
     return aligned
 
 
 def transcribe_video(video_file: Path, model_size: str = "base") -> list[dict[str, object]]:
+    import_failure: Exception | None = None
+    whisper_failure: Exception | None = None
     try:
         import whisper  # type: ignore
-
-        model = whisper.load_model(model_size)
-        result = model.transcribe(str(video_file), verbose=False)
-        return result.get("segments", [])
-    except Exception:
-        pass
+    except ImportError as exc:
+        import_failure = exc
+    else:
+        try:
+            model = whisper.load_model(model_size)
+            result = model.transcribe(str(video_file), verbose=False)
+            return result.get("segments", [])
+        except Exception as exc:
+            whisper_failure = exc
 
     with tempfile.TemporaryDirectory() as temp_dir:
         cmd = [
@@ -170,9 +178,12 @@ def transcribe_video(video_file: Path, model_size: str = "base") -> list[dict[st
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)
         except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+            whisper_reason = f"whisper python failure: {whisper_failure}; " if whisper_failure else ""
+            import_reason = f"import failure: {import_failure}; " if import_failure else ""
             raise RuntimeError(
                 "Unable to transcribe video. Install openai-whisper (pip install openai-whisper) "
-                "or make sure the whisper CLI is available."
+                "or make sure the whisper CLI is available. "
+                f"{import_reason}{whisper_reason}cli failure: {exc}"
             ) from exc
 
         output_file = Path(temp_dir) / f"{video_file.stem}.json"
@@ -212,9 +223,18 @@ def process_from_env(env_path: Path = Path(".env")) -> Path:
     settings = load_dotenv(env_path)
     video_path, subtitle_path = resolve_paths(settings, repository_root=repository_root)
     model_size = settings.get("WHISPER_MODEL", "base")
+    similarity_threshold = float(settings.get("ALIGNMENT_SIMILARITY_THRESHOLD", SIMILARITY_THRESHOLD))
+    min_duration_seconds = float(
+        settings.get("MIN_SUBTITLE_DURATION_SECONDS", MIN_SUBTITLE_DURATION_SECONDS)
+    )
     transcript_segments = transcribe_video(video_path, model_size=model_size)
     entries = parse_srt(subtitle_path.read_text(encoding="utf-8"))
-    adjusted = align_subtitles_to_transcript(entries, transcript_segments)
+    adjusted = align_subtitles_to_transcript(
+        entries,
+        transcript_segments,
+        similarity_threshold=similarity_threshold,
+        min_duration_seconds=min_duration_seconds,
+    )
     subtitle_path.write_text(serialize_srt(adjusted), encoding="utf-8")
     return subtitle_path
 
