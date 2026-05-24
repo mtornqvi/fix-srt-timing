@@ -21,6 +21,40 @@ def _similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, _normalized_text(a), _normalized_text(b)).ratio()
 
 
+def _check_multi_segment_match(
+    subtitle_text: str,
+    transcript_segments: list[dict[str, object]],
+    start_idx: int,
+    max_lookahead: int = 3,
+) -> tuple[int, float]:
+    """Check if subtitle spans multiple consecutive transcript segments.
+    
+    Returns:
+        (end_segment_idx, combined_similarity) - Index of last matching segment and combined similarity
+    """
+    combined_text = str(transcript_segments[start_idx].get("text", "")).strip()
+    best_end_idx = start_idx
+    best_similarity = _similarity(subtitle_text, combined_text)
+    
+    # Try combining with subsequent segments
+    for offset in range(1, min(max_lookahead, len(transcript_segments) - start_idx)):
+        next_idx = start_idx + offset
+        next_text = str(transcript_segments[next_idx].get("text", "")).strip()
+        combined_text += " " + next_text
+        
+        combined_similarity = _similarity(subtitle_text, combined_text)
+        
+        # If combining improves similarity, extend the match
+        if combined_similarity > best_similarity:
+            best_similarity = combined_similarity
+            best_end_idx = next_idx
+        else:
+            # Stop if similarity stops improving
+            break
+    
+    return best_end_idx, best_similarity
+
+
 def align_subtitles_to_transcript(
     entries: list[SubtitleEntry],
     transcript_segments: list[dict[str, object]],
@@ -86,22 +120,78 @@ def align_subtitles_to_transcript(
                 best = segment
                 best_segment_idx = seg_idx
 
-        if best and best_weighted_score > similarity_threshold:
+        # Check for multi-segment match if we found any candidate
+        # (even if below threshold - combining might improve it)
+        multi_end_idx = best_segment_idx
+        multi_similarity = best_score
+        
+        if best is not None:
+            multi_end_idx, multi_similarity = _check_multi_segment_match(
+                entry.text, transcript_segments, best_segment_idx, max_lookahead=3
+            )
+            
+            # Recalculate weighted score for multi-segment match
+            if multi_end_idx > best_segment_idx:
+                multi_start_time = float(best.get("start", 0))
+                multi_time_distance = abs(multi_start_time - expected_start_time)
+                multi_temporal_penalty = min(0.3, multi_time_distance / 100.0)
+                multi_weighted_score = multi_similarity - multi_temporal_penalty
+            else:
+                multi_weighted_score = best_weighted_score
+
+        # Use the match if it exceeds threshold (either single or multi-segment)
+        if best and max(best_weighted_score, multi_weighted_score) > similarity_threshold:
+            
             start = float(best.get("start", entry.start))
-            end = float(best.get("end", entry.end))
-            matched_count += 1
             transcript_text = str(best.get('text', '')).strip()
             
-            # Update cursor to prevent reusing this segment
-            transcript_cursor = best_segment_idx + 1
+            # Prefer multi-segment if it significantly improves match OR brings it above threshold
+            use_multi_segment = (
+                multi_end_idx > best_segment_idx and 
+                (multi_similarity > best_score + 0.05 or 
+                 (multi_weighted_score > similarity_threshold >= best_weighted_score))
+            )
             
-            time_jump = abs(start - expected_start_time)
-            log(f"[ALIGN]   ✓ Matched with transcript segment {best_segment_idx} (similarity: {best_score:.2f}, weighted: {best_weighted_score:.2f})")
-            if time_jump > 5.0:
-                log(f"[ALIGN]   ⚠ Large time jump: expected ~{format_timestamp(expected_start_time)}, got {format_timestamp(start)} ({time_jump:.1f}s difference)")
-            log(f"[ALIGN]   Transcript text: {transcript_text}")
-            log(f"[ALIGN]   New timing from transcript: {format_timestamp(start)} --> {format_timestamp(end)}")
-            log(f"[ALIGN]   Transcript cursor advanced to segment {transcript_cursor}")
+            if use_multi_segment:
+                # Subtitle spans multiple segments - extend timing to cover all
+                end_segment = transcript_segments[multi_end_idx]
+                end = float(end_segment.get("end", entry.end))
+                matched_count += 1
+                
+                # Build combined transcript text for logging
+                combined_texts = []
+                for seg_idx in range(best_segment_idx, multi_end_idx + 1):
+                    combined_texts.append(str(transcript_segments[seg_idx].get('text', '')).strip())
+                combined_transcript_text = " ".join(combined_texts)
+                
+                # Update cursor to skip all used segments
+                transcript_cursor = multi_end_idx + 1
+                
+                time_jump = abs(start - expected_start_time)
+                segment_count = multi_end_idx - best_segment_idx + 1
+                log(f"[ALIGN]   ✓ Matched with transcript segments {best_segment_idx}-{multi_end_idx} ({segment_count} segments combined)")
+                log(f"[ALIGN]   Single-segment similarity: {best_score:.2f} (weighted: {best_weighted_score:.2f})")
+                log(f"[ALIGN]   Multi-segment similarity: {multi_similarity:.2f} (weighted: {multi_weighted_score:.2f})")
+                if time_jump > 5.0:
+                    log(f"[ALIGN]   ⚠ Large time jump: expected ~{format_timestamp(expected_start_time)}, got {format_timestamp(start)} ({time_jump:.1f}s difference)")
+                log(f"[ALIGN]   Combined transcript text: {combined_transcript_text}")
+                log(f"[ALIGN]   New timing from transcript: {format_timestamp(start)} --> {format_timestamp(end)}")
+                log(f"[ALIGN]   Transcript cursor advanced to segment {transcript_cursor}")
+            else:
+                # Single segment match
+                end = float(best.get("end", entry.end))
+                matched_count += 1
+                
+                # Update cursor to prevent reusing this segment
+                transcript_cursor = best_segment_idx + 1
+                
+                time_jump = abs(start - expected_start_time)
+                log(f"[ALIGN]   ✓ Matched with transcript segment {best_segment_idx} (similarity: {best_score:.2f}, weighted: {best_weighted_score:.2f})")
+                if time_jump > 5.0:
+                    log(f"[ALIGN]   ⚠ Large time jump: expected ~{format_timestamp(expected_start_time)}, got {format_timestamp(start)} ({time_jump:.1f}s difference)")
+                log(f"[ALIGN]   Transcript text: {transcript_text}")
+                log(f"[ALIGN]   New timing from transcript: {format_timestamp(start)} --> {format_timestamp(end)}")
+                log(f"[ALIGN]   Transcript cursor advanced to segment {transcript_cursor}")
         else:
             start = entry.start
             end = entry.end
