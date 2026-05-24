@@ -15,7 +15,7 @@ from config import (
 from logging_utils import log, setup_logging, close_logging, get_log_file
 from srt_parser import parse_srt, serialize_srt
 from transcription import transcribe_video
-from utils import backup_subtitle_file
+# Removed backup import - now creating .improved.srt instead
 
 
 def process_from_env(env_path: Path = Path(".env")) -> tuple[Path, Path]:
@@ -68,15 +68,14 @@ def process_from_env(env_path: Path = Path(".env")) -> tuple[Path, Path]:
         min_duration_seconds=min_duration_seconds,
     )
     
-    # Step 4: Backup original file
-    backup_path = backup_subtitle_file(subtitle_path)
+    # Step 4: Write improved subtitles to new file
+    improved_path = subtitle_path.with_suffix('.improved.srt')
+    log(f"\n[SAVE] Writing improved subtitles to: {improved_path}")
+    improved_path.write_text(serialize_srt(adjusted), encoding="utf-8")
+    log(f"[SAVE] ✓ Improved subtitle file created successfully")
+    log(f"[SAVE] Original file preserved: {subtitle_path}")
     
-    # Step 5: Write updated subtitles
-    log(f"\n[SAVE] Writing updated subtitles to: {subtitle_path}")
-    subtitle_path.write_text(serialize_srt(adjusted), encoding="utf-8")
-    log(f"[SAVE] ✓ Subtitle file updated successfully")
-    
-    return subtitle_path, log_path
+    return improved_path, log_path
 
 
 if __name__ == "__main__":

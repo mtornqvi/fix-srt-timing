@@ -64,7 +64,9 @@ class FixSrtTimingTests(unittest.TestCase):
                 finally:
                     close_logging()
 
-                updated = srt.read_text(encoding="utf-8")
+                # Check the improved file, not the original
+                improved_srt = root / "clip.improved.srt"
+                updated = improved_srt.read_text(encoding="utf-8")
                 self.assertIn("00:00:04,000 --> 00:00:05,000", updated)
 
     def test_process_from_env_rejects_invalid_alignment_threshold(self) -> None:
