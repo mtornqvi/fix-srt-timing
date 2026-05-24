@@ -102,6 +102,22 @@ The script creates several files in the target folder:
 
 **Note:** Console output is minimal. Check the log file for detailed information about the alignment process.
 
+### Transcript Accuracy
+
+The script uses enhanced Whisper parameters for better timestamp accuracy:
+
+- **`word_timestamps=True`** - Provides word-level timing for more precise alignment
+- **`condition_on_previous_text=False`** - Reduces hallucinations and improves independence of segments
+- **No-speech detection** - Logs warnings for segments with >50% no-speech probability
+
+**Common issues:**
+- Whisper may place early segments at incorrect timestamps (e.g., starting at 0.0 when audio begins later)
+- Background noise or music may be misdetected as speech
+- Check the log file for "⚠ Warning" messages about suspicious segments
+
+**To regenerate with improved settings:**
+If you have an old cached transcript, delete the `.transcript.json` file and re-run the script.
+
 ## Dependencies
 
 The script requires `openai-whisper` for audio transcription. Install via:

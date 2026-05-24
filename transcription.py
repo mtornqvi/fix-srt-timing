@@ -39,10 +39,24 @@ def transcribe_video(video_file: Path, model_size: str = "base") -> list[dict[st
             log(f"[TRANSCRIBE] Loading Whisper model '{model_size}'...")
             model = whisper.load_model(model_size)
             log(f"[TRANSCRIBE] Model loaded successfully")
-            log(f"[TRANSCRIBE] Transcribing audio (fp16=False for CPU compatibility)...")
-            result = model.transcribe(str(video_file), verbose=False, fp16=False)
+            log(f"[TRANSCRIBE] Transcribing audio with enhanced timestamp accuracy...")
+            log(f"[TRANSCRIBE] Options: fp16=False (CPU), word_timestamps=True, condition_on_previous_text=False")
+            result = model.transcribe(
+                str(video_file), 
+                verbose=False, 
+                fp16=False,
+                word_timestamps=True,  # More accurate word-level timing
+                condition_on_previous_text=False,  # Reduce hallucinations
+            )
             segments = result.get("segments", [])
             log(f"[TRANSCRIBE] Transcription complete! Generated {len(segments)} segments")
+            
+            # Log segments with high no_speech_prob as warnings
+            suspicious_segments = [s for s in segments if s.get("no_speech_prob", 0) > 0.5]
+            if suspicious_segments:
+                log(f"[TRANSCRIBE] ⚠ Warning: {len(suspicious_segments)} segments have high no-speech probability")
+                log(f"[TRANSCRIBE]   These may be misdetected silence or background noise")
+            
             # Save transcript to target folder
             transcript_file.write_text(
                 json.dumps({"segments": segments}, ensure_ascii=False, indent=2),
@@ -70,6 +84,10 @@ def transcribe_video(video_file: Path, model_size: str = "base") -> list[dict[st
             "--fp16",
             "False",
             "--verbose",
+            "False",
+            "--word_timestamps",
+            "True",
+            "--condition_on_previous_text",
             "False",
         ]
         try:
