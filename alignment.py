@@ -41,7 +41,7 @@ def align_subtitles_to_transcript(
     for idx, entry in enumerate(entries, start=1):
         log(f"\n[ALIGN] Processing subtitle {idx}/{len(entries)}")
         log(f"[ALIGN]   Original timing: {format_timestamp(entry.start)} --> {format_timestamp(entry.end)}")
-        log(f"[ALIGN]   Text preview: {entry.text[:50]}..." if len(entry.text) > 50 else f"[ALIGN]   Text: {entry.text}")
+        log(f"[ALIGN]   Subtitle text: {entry.text}")
         
         best = None
         best_score = 0.0
@@ -58,13 +58,16 @@ def align_subtitles_to_transcript(
             start = float(best.get("start", entry.start))
             end = float(best.get("end", entry.end))
             matched_count += 1
+            transcript_text = str(best.get('text', '')).strip()
             log(f"[ALIGN]   ✓ Matched with transcript (similarity: {best_score:.2f})")
-            log(f"[ALIGN]   Transcript text: {str(best.get('text', ''))[:50]}...")
+            log(f"[ALIGN]   Transcript text: {transcript_text}")
             log(f"[ALIGN]   New timing from transcript: {format_timestamp(start)} --> {format_timestamp(end)}")
         else:
             start = entry.start
             end = entry.end
+            best_transcript_text = str(best.get('text', '')).strip() if best else "(no match)"
             log(f"[ALIGN]   ✗ No good match found (best similarity: {best_score:.2f})")
+            log(f"[ALIGN]   Best transcript candidate: {best_transcript_text}")
             log(f"[ALIGN]   Keeping original timing")
 
         # Ensure non-overlapping and minimum duration
